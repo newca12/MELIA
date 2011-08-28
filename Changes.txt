@@ -1,0 +1,4 @@
+Version 0.1   (12/07/2011) - initial Version
+Version 0.1.1 (22/07/2011) - bugfix: fix a soundness bug
+Version 0.1.2 (01/08/2011) - bugfix: fix a bug that affects completeness
+
