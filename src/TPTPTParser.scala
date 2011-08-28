@@ -34,7 +34,7 @@ object TPTPTParser {
    * A parser for TPTP, both FOF and TFF
    */
 
-  class TPTPTParser extends JavaTokenParsers {
+  class TPTPTParser extends JavaTokenParsers with PackratParsers {
 
     // Mapping of variables to types - needed, as quantified formuals are entered,
     // and the varTypes map keeps track of all governing (quantified) variables
@@ -48,9 +48,9 @@ object TPTPTParser {
     /**
      * The grammar rules
      */
-    def TPTP_input: Parser[List[List[Formula]]] = rep(annotated_formula | comment | include)
+    lazy val TPTP_input: PackratParser[List[List[Formula]]] = rep(annotated_formula | comment | include)
 
-    def annotated_formula = 
+    lazy val annotated_formula = 
       // TPTP_input requires a list, because include abobe returns a list
       ( fof_annotated_logic_formula ^^ { List(_) } ) |
       ( tff_annotated_type_formula ^^ { _ => List() } ) |
@@ -58,7 +58,7 @@ object TPTPTParser {
     // cnf_annotated
 
 
-    def fof_annotated_logic_formula = "fof" ~ "(" ~ (atomic_word | wholeNumber) ~ "," ~ 
+    lazy val fof_annotated_logic_formula = "fof" ~ "(" ~ (atomic_word | wholeNumber) ~ "," ~ 
                         atomic_word ~ "," ~ fof_logic_formula ~ ")" <~ "." ^^ {
       case "fof" ~ "(" ~ name ~ "," ~ role ~ "," ~ f ~ ")" => 
 	role match {
@@ -79,13 +79,13 @@ object TPTPTParser {
     // In fact, non-null annotatations are currently not accepted
     // Slightly rewritten version of the BNF rule in the TPTP report, to discrimate
     // between type and non-type very early, thus helping the parser.
-    def tff_annotated_type_formula = "tff" ~ "(" ~ (atomic_word | wholeNumber) ~ "," ~ "type" ~ "," ~
+    lazy val tff_annotated_type_formula = "tff" ~ "(" ~ (atomic_word | wholeNumber) ~ "," ~ "type" ~ "," ~
                         tff_typed_atom ~ ")" <~ "." ^^ { 
       // It's there just for its side effect
       _ => ()
     }
 
-    def tff_annotated_logic_formula = "tff" ~ "(" ~ (atomic_word | wholeNumber) ~ "," ~ 
+    lazy val tff_annotated_logic_formula = "tff" ~ "(" ~ (atomic_word | wholeNumber) ~ "," ~ 
                         formula_role_other_than_type ~ "," ~ tff_logic_formula ~ ")" <~ "." ^^ {
       case "tff" ~ "(" ~ name ~ "," ~ role ~ "," ~ f ~ ")" => 
 	role match {
@@ -97,7 +97,7 @@ object TPTPTParser {
 	}
     } 
 
-    def formula_role_other_than_type = commit(
+    lazy val formula_role_other_than_type = commit(
       // "type" | 
       "axiom" | "hypothesis" | "definition" | "assumption" | "lemma" | "theorem" | 
       "conjecture" | "negated_conjecture" | "unknown" | atomic_word )
@@ -106,7 +106,7 @@ object TPTPTParser {
 
 
     // tff_typed_atom can appear only at toplevel
-    def tff_typed_atom:Parser[Unit] =
+    lazy val tff_typed_atom:PackratParser[Unit] =
                               ( ( tff_untyped_atom ~ ":" ~ tff_top_level_type ) ^^ { 
 				    // could declare a new type or a symbol of an existing type
                                     case typeName ~ ":" ~ Rank((Nil, TType)) => { 
@@ -140,23 +140,23 @@ object TPTPTParser {
 				    }
 				  } ) |
                               ( "(" ~> tff_typed_atom <~ ")" )
-    def tff_untyped_atom =    atomic_word
+    lazy val tff_untyped_atom =    atomic_word
 
     // This results in a Rank in our terminology
-    def tff_top_level_type:Parser[Rank] =
+    lazy val tff_top_level_type:PackratParser[Rank] =
 			        tff_mapping_type |
 				( tff_atomic_type  ^^ { (typ:Type) => Rank0(TypeExistsChecked(typ)) } )
 
-    def tff_mapping_type:Parser[Rank] =
+    lazy val tff_mapping_type:PackratParser[Rank] =
                               ( ( tff_unitary_type ~ ">" ~ tff_atomic_type ) ^^ {
 				    case argsTypes ~ ">" ~ resType => 
 				      Rank((argsTypes map { TypeExistsChecked(_) }), 
 					   TypeExistsChecked(resType))
 				  } ) |
                               ( "(" ~> tff_mapping_type <~ ")" )
-    def tff_unitary_type =    ( tff_atomic_type ^^ { List(_) } ) | 
+    lazy val tff_unitary_type =    ( tff_atomic_type ^^ { List(_) } ) | 
                               ( "(" ~> tff_xprod_type <~ ")" )
-    def tff_xprod_type:Parser[List[Type]] =
+    lazy val tff_xprod_type:PackratParser[List[Type]] =
                               ( tff_atomic_type ~ "*" ~  rep1sep(tff_atomic_type, "*") ^^ {
 				  case t1 ~ "*" ~ tail => t1::tail
 				  } ) |
@@ -166,33 +166,33 @@ object TPTPTParser {
      * TFF formulas
      */
 
-    def tff_logic_formula =   tff_binary_formula | tff_unitary_formula
-    def tff_binary_formula =  tff_binary_nonassoc | tff_binary_assoc
-    def tff_binary_nonassoc = tff_unitary_formula ~ 
+    lazy val tff_logic_formula =   tff_binary_formula | tff_unitary_formula
+    lazy val tff_binary_formula =  tff_binary_nonassoc | tff_binary_assoc
+    lazy val tff_binary_nonassoc = tff_unitary_formula ~ 
 			      binary_nonassoc_connective ~ 
 			      tff_unitary_formula ^^ {
 				case f1 ~ op ~ f2 => op(f1,f2)
 			      }
-    def tff_binary_assoc =  tff_or_formula | tff_and_formula
-    def tff_or_formula =
+    lazy val tff_binary_assoc =  tff_or_formula | tff_and_formula
+    lazy val tff_or_formula =
       tff_unitary_formula ~ "|" ~ rep1sep(tff_unitary_formula, "|") ^^ {
 				  case f1 ~ "|" ~ tail => {
 				      f1::tail reduceLeft { Or(_, _) }
 				  }
 			      }
-    def tff_and_formula =     
+    lazy val tff_and_formula =     
       tff_unitary_formula ~ "&" ~ rep1sep(tff_unitary_formula, "&") ^^ {
 				  case f1 ~ "&" ~ tail => {
 				      f1::tail reduceLeft { And(_, _) }
 				  }
 			      }
-    def tff_unitary_formula:Parser[Formula] = 
+    lazy val tff_unitary_formula:PackratParser[Formula] = 
                               tff_quantified_formula | 
 			      tff_unary_formula |
                               atom |
 			       "(" ~> tff_logic_formula <~ ")"
-    def tff_unary_formula = "~" ~> tff_unitary_formula ^^ { Neg(_) }
-    def tff_quantified_formula:Parser[Formula] = 
+    lazy val tff_unary_formula = "~" ~> tff_unitary_formula ^^ { Neg(_) }
+    lazy val tff_quantified_formula:PackratParser[Formula] = 
                     (((forallSign ^^ { _ => { Forall(_,_) } } ) |
 		      ("?" ^^ { _ => { Exists(_,_) }})) ~ 
 		     "[" ~ tff_varlist ~ "]" ^^ { 
@@ -215,9 +215,9 @@ object TPTPTParser {
 
 
     // Variable list
-    def tff_varlist: Parser[List[TypedVar]] =  rep1sep(tff_var, ",")
+    lazy val tff_varlist: PackratParser[List[TypedVar]] =  rep1sep(tff_var, ",")
 
-    def tff_var: Parser[TypedVar] = 
+    lazy val tff_var: PackratParser[TypedVar] = 
       ( variable ~ ":" ~ tff_atomic_type ^^ { 
 	case x ~ ":" ~ typ => (x,TypeExistsChecked(typ)) 
       } ) |
@@ -226,13 +226,13 @@ object TPTPTParser {
 	x => (x,IType) 
       } )
 
-    def tff_atomic_type = 
+    lazy val tff_atomic_type = 
       // user-defined type
       defined_type |
       ( atomic_word ^^ { Type(_) } ) 
     // predefined type
 
-    def defined_type: Parser[Type] = 
+    lazy val defined_type: PackratParser[Type] = 
       (("$oType" | "$o") ^^ { _ => OType }) |
       (("$iType" | ("$i" <~ guard(not("nt")))) ^^ { _ => IType }) |
       ("$tType" ^^ { _ => TType }) |
@@ -244,33 +244,33 @@ object TPTPTParser {
      */
 
 
-    def fof_logic_formula =   fof_binary_formula | fof_unitary_formula
-    def fof_binary_formula =  fof_binary_nonassoc | fof_binary_assoc
-    def fof_binary_nonassoc = fof_unitary_formula ~ 
+    lazy val fof_logic_formula =   fof_binary_formula | fof_unitary_formula
+    lazy val fof_binary_formula =  fof_binary_nonassoc | fof_binary_assoc
+    lazy val fof_binary_nonassoc = fof_unitary_formula ~ 
 			      binary_nonassoc_connective ~ 
 			      fof_unitary_formula ^^ {
 				case f1 ~ op ~ f2 => op(f1,f2)
 			      }
-    def fof_binary_assoc =  fof_or_formula | fof_and_formula
-    def fof_or_formula =
+    lazy val fof_binary_assoc =  fof_or_formula | fof_and_formula
+    lazy val fof_or_formula =
       fof_unitary_formula ~ "|" ~ rep1sep(fof_unitary_formula, "|") ^^ {
 				  case f1 ~ "|" ~ tail => {
 				      f1::tail reduceLeft { Or(_, _) }
 				  }
 			      }
-    def fof_and_formula =     
+    lazy val fof_and_formula =     
       fof_unitary_formula ~ "&" ~ rep1sep(fof_unitary_formula, "&") ^^ {
 				  case f1 ~ "&" ~ tail => {
 				      f1::tail reduceLeft { And(_, _) }
 				  }
 			      }
-    def fof_unitary_formula:Parser[Formula] = 
+    lazy val fof_unitary_formula:PackratParser[Formula] = 
                               fof_quantified_formula | 
 			      fof_unary_formula |
                               atom |
 			       "(" ~> fof_logic_formula <~ ")"
-    def fof_unary_formula = "~" ~> fof_unitary_formula ^^ { Neg(_) }
-    def fof_quantified_formula:Parser[Formula] = 
+    lazy val fof_unary_formula = "~" ~> fof_unitary_formula ^^ { Neg(_) }
+    lazy val fof_quantified_formula:PackratParser[Formula] = 
                     (((forallSign ^^ { _ => { Forall(_,_) } } ) |
 		      ("?" ^^ { _ => { Exists(_,_) }})) ~ 
 		     "[" ~ fof_varlist ~ "]" ^^ { 
@@ -293,14 +293,14 @@ object TPTPTParser {
 
 
     // Variable list
-    def fof_varlist: Parser[List[TypedVar]] = 
+    lazy val fof_varlist: PackratParser[List[TypedVar]] = 
       rep1sep(variable, ",") ^^ { _ map { (_,IType) } } // looks cryptic?
 
  /**
   * Definitions common to TFF and FOF
   */
 
-    def binary_nonassoc_connective = 
+    lazy val binary_nonassoc_connective = 
 			      ( "=>" ^^ { _ => Implies(_,_) } ) |
 			      ( "<=" <~ guard(not(">")) ^^ { _ => Implied(_,_) } ) |
 			      ( "<=>" ^^ { _ => Iff(_,_) } ) |
@@ -315,7 +315,7 @@ object TPTPTParser {
     // might be extended unappropriately, and backtracking (in the parser)
     // cannot undo that.
 
-    def atom =
+    lazy val atom =
       ( "$true" ^^ { _ => TrueAtom }) |
       ( "$false" ^^ { _ => FalseAtom }) |
       // eqn with lhs a variable
@@ -369,11 +369,11 @@ object TPTPTParser {
     // Parsing (of atoms) is such that whenever a term is to be parsed
     // it is clear it must be a term (no backtracking), hence as soon
     // as a term is found the signature can be extended.
-    def term: Parser[Term] =  nonvar_term | variable 
-    def nonvar_term: Parser[Term] = funterm | constant | bg_constant
-    def variable: Parser[Var] = regex(new Regex("[A-Z][a-zA-Z0-9_]*")) ^^ { 
+    lazy val term: PackratParser[Term] =  nonvar_term | variable 
+    lazy val nonvar_term: PackratParser[Term] = funterm | constant | bg_constant
+    lazy val variable: PackratParser[Var] = regex(new Regex("[A-Z][a-zA-Z0-9_]*")) ^^ { 
       name => Var(name) }
-    def funterm: Parser[FunTerm] = functor ~ "(" ~ termlist ~ ")" ^^ {
+    lazy val funterm: PackratParser[FunTerm] = functor ~ "(" ~ termlist ~ ")" ^^ {
       case functor ~ "(" ~ termlist ~ ")" => { 
 	if (!(Sigma.ranks contains functor))
 	  Sigma += (functor -> Rank((termlist map { _ => IType }) -> IType))
@@ -382,10 +382,10 @@ object TPTPTParser {
       }
     }
 
-    def termlist = rep1sep(term, ",")
+    lazy val termlist = rep1sep(term, ",")
 
     // Foreground constant or parameter
-    def constant: Parser[FunTerm] = 
+    lazy val constant: PackratParser[FunTerm] = 
       // a constant cannot be followed by a parenthesis, would see a FunTerm instead
       // Use atomic_word instead of functor?
       guard(functor ~ not("(")) ~>
@@ -396,7 +396,7 @@ object TPTPTParser {
     }
 
     // Background literal constant
-    def bg_constant = 
+    lazy val bg_constant = 
       regex(new Regex(Sigma.isBGElemRegEx)) ^^ { 
 	s => {
 	  // There is no default type for a BG constant - it must always be of the background type
@@ -407,20 +407,20 @@ object TPTPTParser {
       }
     
     // lexical: don't confuse = with => (the lexer is greedy)
-    def equalsSign = "=" <~ guard(not(">"))
+    lazy val equalsSign = "=" <~ guard(not(">"))
     
-    def forallSign = "!" <~ guard(not("="))
+    lazy val forallSign = "!" <~ guard(not("="))
 
-    def functor = keyword | atomic_word
+    lazy val functor = keyword | atomic_word
 
-    def atomic_word: Parser[String] = 
+    lazy val atomic_word: PackratParser[String] = 
       ( regex("""'.*'""".r) ^^ { _.drop(1).dropRight(1) } ) |
       regex("[a-z][a-zA-Z0-9_]*".r)
 
-    def keyword = regex("[$][a-z]+".r)
+    lazy val keyword = regex("[$][a-z]+".r)
 
 /* Could be specific (but why?)
-    def keyword = 
+    lazy val keyword = 
       "$uminus"     |
       "$sum"        |
       "$difference" |
@@ -434,10 +434,10 @@ object TPTPTParser {
 
     // Parsing of comments is not optimal as they may not appear
     // inside formulas - essentially they are an atom
-    def comment: Parser[List[Formula]] =
+    lazy val comment: PackratParser[List[Formula]] =
     """%.*""".r ^^ (x => List(Comment(x)))
 
-    def include: Parser[List[Formula]] = 
+    lazy val include: PackratParser[List[Formula]] = 
       "include" ~> "(" ~> atomic_word <~ ")" <~ "." ^^ {
 	case fileName  => {
 	  val TPTPHome = System.getenv("TPTP")
